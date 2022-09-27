@@ -1,0 +1,185 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var landsat8 = ee.ImageCollection("LANDSAT/LC08/C01/T2_TOA"),
+    s2 = ee.ImageCollection("COPERNICUS/S2_SR"),
+    aoi = 
+    /* color: #0b4a8b */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-90.40480829454178, 37.004381000795576],
+          [-90.40480829454178, 35.49384768131064],
+          [-88.40529657579178, 35.49384768131064],
+          [-88.40529657579178, 37.004381000795576]]], null, false),
+    crop = ee.ImageCollection("USDA/NASS/CDL"),
+    tile1 = 
+    /* color: #bf04c2 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-103.72298456407303, 35.888680630916404],
+          [-103.72298456407303, 34.134164221893805],
+          [-102.16292597032303, 34.134164221893805],
+          [-102.16292597032303, 35.888680630916404]]], null, false),
+    tile2 = 
+    /* color: #00ff00 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-102.19588495469803, 35.90647994139108],
+          [-102.19588495469803, 34.14325740088504],
+          [-100.93245722032303, 34.14325740088504],
+          [-100.93245722032303, 35.90647994139108]]], null, false),
+    tile3 = 
+    /* color: #0000ff */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-103.55818964219803, 34.18870861490118],
+          [-103.55818964219803, 32.379576346329095],
+          [-102.11898065782303, 32.379576346329095],
+          [-102.11898065782303, 34.18870861490118]]], null, false),
+    tile4 = 
+    /* color: #999900 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-102.20687128282303, 34.19779592065266],
+          [-102.20687128282303, 32.333173632956665],
+          [-100.77864862657303, 32.333173632956665],
+          [-100.77864862657303, 34.19779592065266]]], null, false),
+    fccVis = {"min":0,"max":0.9},
+    visualization = {"min":0,"max":0.8,"bands":["NDVI"]};
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var geet = require('users/elacerda/geet:geet'); 
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+  var ndvi = image.normalizedDifference(['B8', 'B4']).rename("NDVI");
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000), image.addBands(ndvi);
+}
+
+// var addNDVI = function(image) {
+//   var ndvi = image.normalizedDifference(['B8', 'B4']).rename("NDVI");
+//   return image.addBands(ndvi);
+//     }
+
+
+// var landsat2020 = landsat8.filterDate('2019-04-01', '2020-11-30');
+// var apr = landsat2020.filterDate('2019-05-01', '2019-05-31').median();
+
+var s22020 = s2.filterDate('2020-04-01', '2020-11-30')
+            .filterBounds(aoi)
+            .map(maskS2clouds);
+            
+ 
+ 
+ 
+            
+
+// print(s22020)
+var months = ee.List.sequence(4, 11);
+var years = ee.List.sequence(2020, 2020);
+
+var composites = ee.ImageCollection.fromImages(months.map(function(m) {
+  var filtered = s22020
+  .select('NDVI')
+  .filter(ee.Filter.calendarRange({
+    start: m,
+    field: 'month'
+  }));
+  return filtered.max().set('month', m);
+}).flatten());
+// print(composites);
+
+// print(s22020)
+// var fcc = apr.select(['B4', 'B3', 'B2']);
+
+
+
+Map.centerObject(aoi);
+var cropLandcover = crop.select('cropland').filterDate('2020-01-01', '2020-12-31').first();
+// Map.addLayer(cropLandcover, {}, 'Crop Landcover');
+// Map.addLayer(composites.first(), {min:0, max:0.7}, 'NDVI');
+// Map.addLayer(fcc, fccVis, 'True Color (432)');
+// Map.addLayer(aprs2.max().clip(aoi), visualization, 'RGB')
+// print(aprs2.select('NDVI').max())
+var aprs2 = s22020.filterDate('2020-06-01', '2020-06-30');
+var image = aprs2.select('NDVI').max().clip(aoi);
+
+print(composites)
+Export.image.toDrive({
+  image: image,
+  description: 'S2_ndvi_2019_jun',
+  scale: 10,
+  crs: 'EPSG:32615',
+  maxPixels: 1e12,
+  region: aoi,
+  fileFormat: 'GeoTIFF',
+  formatOptions: {
+    cloudOptimized: true
+  }
+});
+// print(cropLandcover.toBands())
+
+
+// var crs = s2.first().select('B8').projection();
+// print(crs)
+
+// Export.image.toDrive({
+//   image: composites.toBands().resample('bilinear').reproject({
+//     crs: 'EPSG:4269',
+//     scale: 30
+//     }),
+//   description: 'S2_ndvi_2020_composite',
+//   scale: 30,
+//   crs: 'EPSG:4269',
+//   maxPixels: 1e12,
+//   region: aoi,
+//   fileFormat: 'GeoTIFF',
+//   formatOptions: {
+//     cloudOptimized: true
+//   }
+// });
+
+// // print(cropLandcover.projection().getInfo())
+// Export.image.toDrive({
+//   image: cropLandcover,
+//   description: 'Cropland_2020',
+//   scale: 30,
+//   crs: 'EPSG:4269',
+//   maxPixels: 1e12,
+//   region: aoi,
+//   fileFormat: 'GeoTIFF',
+//   formatOptions: {
+//     cloudOptimized: true
+//   }
+// });
